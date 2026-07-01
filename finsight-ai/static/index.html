@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FinSight AI</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 40px auto; background: #f7f8fa; color: #222; }
+  h1 { color: #1a1a2e; }
+  .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  input[type=file], input[type=text] { padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+  button { background: #1a1a2e; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; }
+  button:hover { background: #333; }
+  #insights { white-space: pre-line; line-height: 1.6; }
+  .anomaly { color: #b00020; font-size: 14px; }
+  canvas { max-height: 300px; }
+</style>
+</head>
+<body>
+
+<h1>💰 FinSight AI</h1>
+<p>Upload your bank statement CSV (columns: <code>date, description, amount</code>) to get instant AI-powered insights.</p>
+
+<div class="card">
+  <input type="file" id="csvFile" accept=".csv">
+  <button onclick="uploadFile()">Analyze</button>
+</div>
+
+<div class="card" id="summaryCard" style="display:none;">
+  <h2>Summary</h2>
+  <p><b>Total Spend:</b> ₹<span id="totalSpend"></span></p>
+  <p><b>Total Income:</b> ₹<span id="totalIncome"></span></p>
+  <p><b>Net Savings:</b> ₹<span id="netSavings"></span></p>
+  <canvas id="categoryChart"></canvas>
+</div>
+
+<div class="card" id="insightsCard" style="display:none;">
+  <h2>🤖 AI Insights</h2>
+  <div id="insights"></div>
+</div>
+
+<div class="card" id="forecastCard" style="display:none;">
+  <h2>📈 Next Month Forecast</h2>
+  <p id="forecastText"></p>
+</div>
+
+<div class="card" id="anomalyCard" style="display:none;">
+  <h2>⚠️ Unusual Transactions</h2>
+  <div id="anomalyList"></div>
+</div>
+
+<div class="card">
+  <h2>Ask a question</h2>
+  <input type="text" id="questionInput" placeholder="e.g. How much did I spend on Food?" style="width:70%;">
+  <button onclick="askQuestion()">Ask</button>
+  <p id="answerText" style="margin-top:10px; font-style: italic;"></p>
+</div>
+
+<script>
+// Use relative paths so this works whether the frontend is served by
+// FastAPI itself, or hosted separately (just change API_BASE below).
+const API_BASE = "";
+
+async function uploadFile() {
+  const fileInput = document.getElementById("csvFile");
+  if (!fileInput.files.length) { alert("Please choose a CSV file first."); return; }
+
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+
+  const res = await fetch(`${API_BASE}/api/upload`, {
+    method: "POST",
+    body: formData,
+    credentials: "include",  // needed so the session cookie is sent/stored
+  });
+
+  if (!res.ok) { alert("Upload failed. Check your CSV format."); return; }
+
+  await loadSummary();
+  await loadForecast();
+  await loadAnomalies();
+}
+
+async function loadSummary() {
+  const res = await fetch(`${API_BASE}/api/summary`, { credentials: "include" });
+  const data = await res.json();
+
+  document.getElementById("summaryCard").style.display = "block";
+  document.getElementById("totalSpend").innerText = data.total_spend;
+  document.getElementById("totalIncome").innerText = data.total_income;
+  document.getElementById("netSavings").innerText = data.net_savings;
+
+  document.getElementById("insightsCard").style.display = "block";
+  document.getElementById("insights").innerText = data.ai_insights;
+
+  const labels = Object.keys(data.category_breakdown);
+  const values = Object.values(data.category_breakdown);
+  new Chart(document.getElementById("categoryChart"), {
+    type: "pie",
+    data: { labels, datasets: [{ data: values }] },
+  });
+}
+
+async function loadForecast() {
+  const res = await fetch(`${API_BASE}/api/forecast`, { credentials: "include" });
+  const data = await res.json();
+  document.getElementById("forecastCard").style.display = "block";
+  document.getElementById("forecastText").innerText = data.forecast
+    ? `Predicted spend next month: ₹${data.forecast} (trend: ${data.trend})`
+    : data.note;
+}
+
+async function loadAnomalies() {
+  const res = await fetch(`${API_BASE}/api/anomalies`, { credentials: "include" });
+  const data = await res.json();
+  document.getElementById("anomalyCard").style.display = "block";
+  const list = document.getElementById("anomalyList");
+  list.innerHTML = data.anomalies.length
+    ? data.anomalies.map(a => `<p class="anomaly">${a.date} — ${a.description} — ₹${a.amount} (${a.category})</p>`).join("")
+    : "<p>No unusual transactions detected.</p>";
+}
+
+async function askQuestion() {
+  const question = document.getElementById("questionInput").value;
+  if (!question) return;
+  const res = await fetch(`${API_BASE}/api/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ question }),
+  });
+  const data = await res.json();
+  document.getElementById("answerText").innerText = data.answer;
+}
+</script>
+
+</body>
+</html>
